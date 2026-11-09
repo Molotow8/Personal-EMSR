@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Personalkalender TG</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .sticky-col-1 { position: sticky; left: 0px; z-index: 20; background-color: #f8fafc; width: 155px; min-width: 155px; }
+    .selected-cell { outline: 2px solid #2563eb !important; background-color: #dbeafe !important; }
+    .kw-separator { border-right: 3px solid #1e293b !important; }
+
+    /* Druckoptimierung für A3 Querformat mit erzwungenen Farben und sichtbaren Linien */
+    @media print {
+      @page { size: A3 landscape; margin: 10mm; }
+      body * { visibility: hidden; }
+      #printable-area, #printable-area * { visibility: visible; }
+      #printable-area { position: absolute; left: 0; top: 0; width: 100%; }
+      .no-print { display: none !important; }
+      table, th, td { border: 1px solid #9ca3af !important; }
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    }
+  </style>
+</head>
+<body class="bg-gray-100 font-sans text-xs antialiased text-gray-800 select-none">
+
+  <!-- NAVIGATION BAR -->
+  <header id="topNavBar" class="bg-slate-800 text-white p-3 no-print flex flex-wrap items-center justify-between gap-3 shadow-md transition-all">
+    <div class="flex items-center gap-2">
+      <h1 class="text-base font-bold mr-2">Personalkalender TG</h1>
+      
+      <!-- JAHR BIS 2066 -->
+      <div class="flex items-center bg-slate-700 px-2 py-1 rounded border border-slate-600">
+        <span class="text-xs text-slate-300 mr-1">Jahr:</span>
+        <input type="number" id="yearInput" value="2026" min="2025" max="2066" onchange="renderCalendar()" class="w-16 bg-slate-800 text-white font-bold px-1 rounded text-center focus:outline-none" />
+      </div>
+
+      <div class="flex items-center bg-slate-700 rounded border border-slate-600">
+        <button onclick="navigateWeek(-1)" class="px-2.5 py-1 hover:bg-slate-600 font-bold text-yellow-400" title="1 Woche zurück">◀</button>
+        <span id="weekDisplayInfo" class="px-2 text-xs font-semibold text-slate-200">Woche</span>
+        <button onclick="navigateWeek(1)" class="px-2.5 py-1 hover:bg-slate-600 font-bold text-yellow-400" title="1 Woche vor">▶</button>
+      </div>
+    </div>
+
+    <!-- SCHNELLWAHL -->
+    <div class="flex items-center gap-1 bg-slate-700 p-1 rounded flex-wrap">
+      <span class="text-slate-300 font-medium px-1">Schnellwahl:</span>
+      <button onclick="applyBatchValue('Ferien')" class="bg-yellow-300 text-yellow-950 font-bold px-2 py-1 rounded hover:bg-yellow-200">🌴 Ferien</button>
+      <button onclick="applyBatchValue('Schule')" class="bg-emerald-500 text-white font-bold px-2 py-1 rounded hover:bg-emerald-400">Schule</button>
+      <button onclick="applyBatchValue('Kurs')" class="bg-teal-500 text-white font-bold px-2 py-1 rounded hover:bg-teal-400">Kurs</button>
+      <button onclick="applyBatchValue('Firma')" class="bg-purple-500 text-white font-bold px-2 py-1 rounded hover:bg-purple-400">Firma</button>
+      <button onclick="applyBatchValue('Krankheit')" class="bg-red-500 text-white font-bold px-2 py-1 rounded hover:bg-red-400">Krank</button>
+      <button onclick="applyBatchValue('')" class="bg-slate-600 text-white px-2 py-1 rounded hover:bg-slate-500">Leeren</button>
+    </div>
+
+    <!-- ANSICHTEN & LABELS -->
+    <div class="flex items-center gap-1 bg-slate-700 p-1 rounded flex-wrap">
+      <span class="text-slate-300 font-medium px-1">Ansicht:</span>
+      <button onclick="setViewMode('3days')" class="px-2 py-1 rounded hover:bg-slate-600 font-semibold">3 Tage</button>
+      <button onclick="setViewMode('5days')" class="px-2 py-1 rounded hover:bg-slate-600 font-semibold">5 Tage</button>
+      <button onclick="setViewMode('month')" class="px-2 py-1 rounded hover:bg-slate-600 font-semibold">1 Monat</button>
+      <button onclick="setViewMode('full')" class="px-2 py-1 rounded hover:bg-slate-600 font-semibold">Ganzjahr</button>
+      
+      <!-- LABEL FILTER & VERWALTUNG -->
+      <select id="labelFilter" onchange="renderCalendar()" class="bg-slate-800 text-white px-2 py-1 rounded border border-slate-600 text-xs font-semibold ml-2">
+        <option value="all">Alle Labels anzeigen</option>
+      </select>
+      <button onclick="openLabelManager()" class="bg-purple-600 hover:bg-purple-500 text-white px-2 py-1 rounded text-xs font-bold" title="Labels ordnen & verwalten">⚙️ Labels</button>
+
+      <button onclick="toggleMobileFocusMode()" id="mobileFocusBtn" class="bg-amber-600 hover:bg-amber-500 text-white px-2.5 py-1 rounded font-bold ml-2">📱 Mobil</button>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <button onclick="openGlobalReportModal()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded font-bold">📊 Report</button>
+      <button onclick="openAutomatikModal()" class="bg-teal-600 hover:bg-teal-500 text-white px-3 py-1 rounded font-bold">⚙️ Automatik</button>
+      <button onclick="addEmployee()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded font-medium">+ MA</button>
+      <button onclick="addProject()" class="bg-purple-600 hover:bg-purple-500 text-white px-3 py-1 rounded font-medium">+ Projekt</button>
+      <button onclick="saveData()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded font-medium">💾 Speichern</button>
+      <button onclick="loadData()" class="bg-amber-600 hover:bg-amber-500 text-white px-3 py-1 rounded font-medium">📂 Laden</button>
+      <button onclick="openPrintModal()" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded font-medium">🖨️ A3 Drucken</button>
+    </div>
+  </header>
+
+  <!-- MOBIL SCHALTER (FIXED BUTTON) -->
+  <button id="floatingShowNav" onclick="toggleMobileFocusMode()" class="hidden fixed top-2 right-2 z-50 bg-slate-900 text-white px-3 py-1.5 rounded-full shadow-lg font-bold text-xs no-print border border-yellow-400">
+    📂 Menü einblenden
+  </button>
+
+  <!-- BATCH SELECTION ACTION BAR -->
+  <div id="selectionBar" class="hidden bg-blue-950 text-white p-2 px-4 flex flex-wrap items-center justify-between gap-3 border-b-2 border-blue-400 no-print shadow-inner">
+    <div class="flex items-center gap-2">
+      <span class="font-bold text-yellow-400" id="selectedCount">0 Felder markiert</span>
+      <span class="text-xs text-blue-200">| Aktion ausführen:</span>
+    </div>
+
+    <div class="flex items-center gap-2 flex-wrap">
+      <button onclick="applyBatchValue('Ferien')" class="bg-yellow-300 text-yellow-950 font-bold px-3 py-1 rounded hover:bg-yellow-200">🌴 Ferien</button>
+      <button onclick="applyBatchValue('Schule')" class="bg-emerald-500 text-white font-bold px-2 py-1 rounded hover:bg-emerald-400">Schule</button>
+      <button onclick="applyBatchValue('Kurs')" class="bg-teal-500 text-white font-bold px-2 py-1 rounded hover:bg-teal-400">Kurs</button>
+      <button onclick="applyBatchValue('Firma')" class="bg-purple-500 text-white font-bold px-2 py-1 rounded hover:bg-purple-400">Firma</button>
+      <button onclick="applyBatchValue('Krankheit')" class="bg-red-500 text-white font-bold px-2 py-1 rounded hover:bg-red-400">Krankheit</button>
+      <button onclick="applyBatchValue('')" class="bg-slate-700 text-white px-2 py-1 rounded hover:bg-slate-600">Leeren</button>
+
+      <div class="flex items-center gap-1 border-l border-slate-600 pl-2">
+        <input type="text" id="customTextInput" placeholder="Freier Text..." class="bg-slate-800 text-white px-2 py-1 rounded border border-slate-600 text-xs w-32 focus:outline-none" />
+        <button onclick="applyBatchCustomText()" class="bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded font-medium">Setzen</button>
+      </div>
+
+      <button onclick="clearSelection()" class="bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded ml-2 font-bold">✕ Aufheben</button>
+    </div>
+  </div>
+
+  <!-- TABLE CONTAINER -->
+  <div id="printable-area" class="overflow-auto max-h-[88vh] p-2 bg-gray-200">
+    <div class="inline-block min-w-full bg-white shadow rounded border border-gray-400">
+      <table class="border-collapse w-full text-center" id="calendarTable">
+        <thead id="tableHead"></thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- REPORT MODAL -->
+  <div id="globalReportModal" class="hidden fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 no-print">
+    <div class="bg-white rounded-lg shadow-2xl max-w-7xl w-full p-6 max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-center border-b pb-3 mb-4">
+        <h3 class="text-lg font-bold text-slate-800">📊 Personal-, Jahres- & Label-Report TG</h3>
+        <button onclick="document.getElementById('globalReportModal').classList.add('hidden')" class="text-red-600 font-bold text-lg">✕</button>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 bg-slate-50 p-4 rounded-lg border text-xs">
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Wochenarbeitszeit (h):</label>
+          <input type="number" id="globalWeekHours" value="40.5" step="0.5" onchange="calculateReportStats()" class="w-full p-2 border rounded font-bold text-blue-900 bg-white" />
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Tagesarbeitszeit (h):</label>
+          <input type="number" id="globalDayHours" value="8.1" step="0.1" onchange="calculateReportStats()" class="w-full p-2 border rounded font-bold text-blue-900 bg-white" />
+        </div>
+        <div class="bg-white p-3 rounded shadow-sm border col-span-2 flex items-center justify-between">
+          <div>
+            <div class="text-[11px] text-slate-500 font-semibold">Total Mann-Stunden zur Verfügung (Netto)</div>
+            <div class="text-2xl font-bold text-emerald-800" id="reportTotalNetHours">0 h</div>
+          </div>
+          <div class="text-right">
+            <div class="text-[10px] text-slate-400">Aktive MA: <span id="reportActiveMA">0</span></div>
+            <div class="text-[10px] text-slate-400 font-bold text-orange-700">Feiertage auf Werktage: <span id="reportHolidayCount">0</span> Tage</div>
+          </div>
+        </div>
+      </div>
+
+      <h4 class="font-bold text-slate-700 mb-2 text-sm">Mann-Stunden nach Labels aufgeschlüsselt:</h4>
+      <div id="labelSummaryContainer" class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6"></div>
+
+      <h4 class="font-bold text-slate-700 mb-2 text-sm">Mitarbeiter-Detailübersicht (Ferien, Schule, Kurs, Firma & Krankheit voll abgezogen)</h4>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse text-xs">
+          <thead>
+            <tr class="bg-slate-200 text-slate-700 border-b">
+              <th class="p-2 text-center">Aktiv</th>
+              <th class="p-2">Name</th>
+              <th class="p-2">Pers.-Nr.</th>
+              <th class="p-2">Label</th>
+              <th class="p-2 text-center">Netto Soll</th>
+              <th class="p-2 text-center">Ferien (Anspruch)</th>
+              <th class="p-2 text-center">Genomm. Ferien</th>
+              <th class="p-2 text-center">Rest</th>
+              <th class="p-2 text-center">Schule</th>
+              <th class="p-2 text-center">Kurs</th>
+              <th class="p-2 text-center">Firma</th>
+              <th class="p-2 text-center">Krank</th>
+              <th class="p-2 text-center">Eff. Netto-Stunden</th>
+              <th class="p-2 text-center">Aktion</th>
+            </tr>
+          </thead>
+          <tbody id="reportTableBody"></tbody>
+        </table>
+      </div>
+      <div class="flex justify-end mt-6">
+        <button onclick="document.getElementById('globalReportModal').classList.add('hidden')" class="bg-slate-800 text-white px-4 py-2 rounded text-xs font-bold">Schliessen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LABEL MANAGER MODAL -->
+  <div id="labelManagerModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 no-print">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6 relative">
+      <h3 class="text-lg font-bold text-gray-800 mb-2">⚙️ Labels verwalten & ordnen</h3>
+      <p class="text-xs text-gray-500 mb-4">Füge neue Labels hinzu oder lösche nicht mehr benötigte.</p>
+      
+      <div class="flex gap-2 mb-4">
+        <input type="text" id="newLabelInput" placeholder="Neues Label..." class="flex-1 p-2 border rounded text-xs" />
+        <button onclick="addNewLabelFromManager()" class="bg-purple-600 hover:bg-purple-500 text-white px-3 py-2 rounded text-xs font-bold">+ Hinzufügen</button>
+      </div>
+
+      <div id="labelListContainer" class="space-y-2 max-h-60 overflow-y-auto mb-6 bg-slate-50 p-3 rounded border"></div>
+
+      <div class="flex justify-end">
+        <button onclick="document.getElementById('labelManagerModal').classList.add('hidden')" class="bg-slate-800 text-white px-4 py-2 rounded text-xs font-bold">Fertig</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- FERIEN-ZÄHLER MODAL -->
+  <div id="modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 no-print">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6 relative">
+      <h3 class="text-lg font-bold text-gray-800 mb-1" id="modalName"></h3>
+      <p class="text-sm text-gray-600 mb-4" id="modalEmpNo"></p>
+
+      <div class="mb-4 bg-gray-50 p-3 rounded border border-gray-200 flex items-center justify-between">
+        <label class="font-medium text-gray-700">Jahresanspruch (Tage):</label>
+        <input type="number" id="modalEntitlementInput" class="w-20 p-1 border rounded text-center font-bold" onchange="updateEntitlementFromModal()" />
+      </div>
+
+      <div class="grid grid-cols-3 gap-3 text-center mb-6">
+        <div class="bg-blue-50 p-3 rounded border border-blue-200">
+          <div class="text-xs text-blue-600 font-medium">Anspruch</div>
+          <div class="text-xl font-bold text-blue-900" id="modalEntitlement">25 Tage</div>
+        </div>
+        <div class="bg-yellow-50 p-3 rounded border border-yellow-200">
+          <div class="text-xs text-yellow-700 font-medium">Nur 'Ferien'</div>
+          <div class="text-xl font-bold text-yellow-900" id="modalUsed">0 Tage</div>
+        </div>
+        <div class="bg-emerald-50 p-3 rounded border border-emerald-200">
+          <div class="text-xs text-emerald-600 font-medium">Restanspruch</div>
+          <div class="text-xl font-bold text-emerald-900" id="modalRemaining">25 Tage</div>
+        </div>
+      </div>
+
+      <div class="flex justify-end">
+        <button onclick="closeModal()" class="bg-slate-800 text-white px-4 py-2 rounded text-sm hover:bg-slate-700">Schliessen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- DRUCK MODAL -->
+  <div id="printModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 no-print">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+      <h3 class="text-base font-bold text-gray-800 mb-2">🖨️ A3 Drucken / PDF Export</h3>
+      <div class="space-y-3 text-xs mb-6 bg-slate-50 p-3 rounded border">
+        <div>
+          <label class="block font-semibold text-gray-700 mb-1">Druckmodus:</label>
+          <select id="printModeSelect" onchange="togglePrintModeFields()" class="w-full p-2 border rounded bg-white font-medium">
+            <option value="3weeks">Exakt 3 Wochen ab Startdatum</option>
+            <option value="range">Freier Zeitraum (Von - Bis)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block font-semibold text-gray-700 mb-1">Startdatum:</label>
+          <input type="date" id="printStartDate" class="w-full p-2 border rounded bg-white" />
+        </div>
+        <div id="endDateContainer">
+          <label class="block font-semibold text-gray-700 mb-1">Enddatum:</label>
+          <input type="date" id="printEndDate" class="w-full p-2 border rounded bg-white" />
+        </div>
+      </div>
+      <div class="flex justify-end gap-2">
+        <button onclick="document.getElementById('printModal').classList.add('hidden')" class="bg-gray-300 text-gray-700 px-4 py-2 rounded text-xs font-medium">Abbrechen</button>
+        <button onclick="executeCustomPrint()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-xs font-bold">A3 Druck starten</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AUTOMATIK MODAL -->
+  <div id="automatikModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 no-print">
+    <div class="bg-white rounded-lg shadow-xl max-w-lg w-full p-6 relative">
+      <h3 class="text-lg font-bold text-gray-800 mb-1">⚙️ Automatischer Serieneintrag</h3>
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block font-semibold text-gray-700 mb-1">Ziel:</label>
+          <select id="autoTarget" class="w-full p-2 border rounded bg-white font-medium"></select>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div><label class="block font-semibold text-gray-700 mb-1">Start:</label><input type="date" id="autoStartDate" class="w-full p-2 border rounded" value="2026-06-05" /></div>
+          <div><label class="block font-semibold text-gray-700 mb-1">Ende:</label><input type="date" id="autoEndDate" class="w-full p-2 border rounded" value="2026-10-27" /></div>
+        </div>
+        <div>
+          <label class="block font-semibold text-gray-700 mb-1">Intervall:</label>
+          <select id="autoInterval" class="w-full p-2 border rounded bg-white">
+            <option value="1">Jede Woche</option>
+            <option value="2">Jede 2. Woche</option>
+            <option value="3">Jede 3. Woche</option>
+          </select>
+        </div>
+        <div>
+          <label class="block font-semibold text-gray-700 mb-1">Wochentage:</label>
+          <div class="grid grid-cols-5 gap-2 bg-gray-50 p-2 rounded border">
+            <label class="flex items-center gap-1"><input type="checkbox" name="autoDay" value="1" checked /> Mo</label>
+            <label class="flex items-center gap-1"><input type="checkbox" name="autoDay" value="2" /> Di</label>
+            <label class="flex items-center gap-1"><input type="checkbox" name="autoDay" value="3" /> Mi</label>
+            <label class="flex items-center gap-1"><input type="checkbox" name="autoDay" value="4" /> Do</label>
+            <label class="flex items-center gap-1"><input type="checkbox" name="autoDay" value="5" checked /> Fr</label>
+          </div>
+        </div>
+        <div><label class="block font-semibold text-gray-700 mb-1">Text:</label><input type="text" id="autoValueText" class="w-full p-2 border rounded font-bold text-blue-900" value="Schule" /></div>
+      </div>
+      <div class="flex justify-end gap-2 mt-6">
+        <button onclick="closeAutomatikModal()" class="bg-gray-300 text-gray-700 px-4 py-2 rounded font-medium">Abbrechen</button>
+        <button onclick="executeAutomatik()" class="bg-teal-600 text-white px-4 py-2 rounded font-bold">Starten</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let shiftOptions = ['', 'Frühschicht', 'Spätschicht', 'Nachtschicht', 'Ferien', 'Schule', 'Kurs', 'Firma', 'Schnupperlehrling', 'Feiertag', 'Krankheit'];
+    let availableLabels = ['EMSR', 'Hof', 'Werkstatt', 'WH', 'VB'];
+    
+    const COLOR_MAP = {
+      'Frühschicht': 'bg-amber-300 text-amber-950 font-bold',
+      'Spätschicht': 'bg-orange-400 text-white font-bold',
+      'Nachtschicht': 'bg-indigo-500 text-white font-bold',
+      'Ferien': 'bg-yellow-300 text-yellow-950 font-bold',
+      'Schule': 'bg-emerald-500 text-white font-bold',
+      'Kurs': 'bg-teal-500 text-white font-bold',
+      'Firma': 'bg-purple-500 text-white font-bold',
+      'Feiertag': 'bg-orange-600 text-white font-bold',
+      'Krankheit': 'bg-red-500 text-white font-bold'
+    };
+
+    function getDynamicColor(text) {
+      if (!text) return 'bg-white text-gray-800';
+      if (COLOR_MAP[text]) return COLOR_MAP[text];
+      return 'bg-blue-500 text-white font-bold';
+    }
+
+    function getThurgauHolidayName(dateStr) {
+      const year = dateStr.split('-')[0];
+      const holidays = {
+        [`${year}-01-01`]: 'Neujahr', [`${year}-01-02`]: 'Berchtoldstag',
+        [`${year}-05-14`]: 'Auffahrt', [`${year}-05-25`]: 'Pfingstmontag',
+        [`${year}-08-01`]: 'Nationalfeiertag', [`${year}-12-25`]: 'Weihnachten', [`${year}-12-26`]: 'Stephanstag'
+      };
+      if (year === '2026') {
+        if (dateStr === '2026-04-03') return 'Karfreitag';
+        if (dateStr === '2026-04-06') return 'Ostermontag';
+      }
+      return holidays[dateStr] || null;
+    }
+
+    const SCHOOL_HOLIDAYS_TG = [
+      { start: '2026-01-26', end: '2026-01-30' },
+      { start: '2026-04-06', end: '2026-04-17' },
+      { start: '2026-07-06', end: '2026-08-07' },
+      { start: '2026-10-05', end: '2026-10-16' },
+      { start: '2026-12-21', end: '2027-01-01' }
+    ];
+
+    let EMPLOYEES = [
+      { id: 1, firstName: 'Fritz', lastName: 'Aeberhardt', empNo: '6053', entitlement: 25, active: true, label: 'EMSR' },
+      { id: 2, firstName: 'Simon', lastName: 'Oehri', empNo: '6058', entitlement: 25, active: true, label: 'Hof' },
+      { id: 3, firstName: 'Walter', lastName: 'Arnold', empNo: '6088', entitlement: 25, active: true, label: 'Werkstatt' },
+      { id: 4, firstName: 'Reto', lastName: 'Müller', empNo: '6073', entitlement: 25, active: true, label: 'WH' },
+      { id: 5, firstName: 'José', lastName: 'Casal', empNo: '6056', entitlement: 25, active: true, label: 'VB' }
+    ];
+
+    let gridData = {}; 
+    let infoRow = {};
+    let dailyShifts = {};
+    let projects = ['neue Hofhalle'];
+    let projectData = {}; 
+    let viewMode = '5days';
+    let currentWeekStartIndex = null;
+    let customPrintStart = null;
+    let customPrintEnd = null;
+    let selectedCells = new Set();
+    let isMouseDown = false;
+    let longPressTimer = null;
+    let activeEmpModalId = null;
+    let mobileFocusActive = false;
+
+    function getDates(year) {
+      const dates = [];
+      let curr = new Date(year, 0, 1);
+      const end = new Date(year + 1, 0, 15);
+      
+      while (curr <= end) {
+        const dayNum = curr.getDay();
+        if (dayNum !== 0 && dayNum !== 6) { 
+          const y = curr.getFullYear();
+          const m = String(curr.getMonth() + 1).padStart(2, '0');
+          const d = String(curr.getDate()).padStart(2, '0');
+          const dateStr = `${y}-${m}-${d}`;
+          const dayNames = ['So', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Sa'];
+          
+          const target = new Date(curr.valueOf());
+          const dayNr = (curr.getDay() + 6) % 7;
+          target.setDate(target.getDate() - dayNr + 3);
+          const firstThursday = target.valueOf();
+          target.setMonth(0, 1);
+          if (target.getDay() !== 4) target.setMonth(0, 1 + ((4 - target.getDay() + 7) % 7));
+          const kw = String(1 + Math.ceil((firstThursday - target) / 604800000)).padStart(2, '0');
+          
+          dates.push({
+            dateStr, month: curr.getMonth(), dayOfWeek: dayNum,
+            dayName: dayNames[dayNum], dayFormatted: `${d}.${m}.${y}`,
+            kw, holidayName: getThurgauHolidayName(dateStr)
+          });
+        }
+        curr.setDate(curr.getDate() + 1);
+      }
+      return dates;
+    }
+
+    function initCurrentWeekIndex(dates) {
+      const today = new Date();
+      const y = today.getFullYear();
+      const m = String(today.getMonth() + 1).padStart(2, '0');
+      const d = String(today.getDate()).padStart(2, '0');
+      const todayStr = `${y}-${m}-${d}`;
+      let idx = dates.findIndex(dt => dt.dateStr >= todayStr);
+      if (idx === -1) idx = 0;
+      currentWeekStartIndex = Math.floor(idx / 5) * 5;
+    }
+
+    function navigateWeek(direction) {
+      const year = parseInt(document.getElementById('yearInput').value) || 2026;
+      const dates = getDates(year);
+      if (currentWeekStartIndex === null) initCurrentWeekIndex(dates);
+      currentWeekStartIndex += direction * 5;
+      if (currentWeekStartIndex < 0) currentWeekStartIndex = 0;
+      if (currentWeekStartIndex >= dates.length) currentWeekStartIndex = dates.length - 5;
+      viewMode = 'custom_week';
+      renderCalendar();
+    }
+
+    function setViewMode(mode) {
+      viewMode = mode;
+      customPrintStart = null;
+      customPrintEnd = null;
+      renderCalendar();
+    }
+
+    function toggleMobileFocusMode() {
+      mobileFocusActive = !mobileFocusActive;
+      const navBar = document.getElementById('topNavBar');
+      const floatBtn = document.getElementById('floatingShowNav');
+      const mobileBtn = document.getElementById('mobileFocusBtn');
+
+      if (mobileFocusActive) {
+        navBar.style.display = 'none';
+        floatBtn.classList.remove('hidden');
+        if(mobileBtn) mobileBtn.innerText = '📱 Menü anzeigen';
+      } else {
+        navBar.style.display = 'flex';
+        floatBtn.classList.add('hidden');
+        if(mobileBtn) mobileBtn.innerText = '📱 Mobil';
+      }
+    }
+
+    function updateLabelDropdowns() {
+      const select = document.getElementById('labelFilter');
+      const currentVal = select.value;
+      select.innerHTML = '<option value="all">Alle Labels anzeigen</option>';
+      availableLabels.forEach(l => {
+        select.innerHTML += `<option value="${l}" ${currentVal===l?'selected':''}>${l}</option>`;
+      });
+    }
+
+    function openLabelManager() {
+      const container = document.getElementById('labelListContainer');
+      container.innerHTML = '';
+      availableLabels.forEach((l, index) => {
+        container.innerHTML += `<div class="flex items-center justify-between bg-white p-2 rounded border">
+          <input type="text" value="${l}" onchange="renameLabel(${index}, this.value)" class="font-bold text-slate-800 bg-transparent border-b w-32 focus:outline-none" />
+          <button onclick="removeLabel(${index})" class="text-red-600 font-bold px-2">×</button>
+        </div>`;
+      });
+      document.getElementById('labelManagerModal').classList.remove('hidden');
+    }
+
+    function addNewLabelFromManager() {
+      const val = document.getElementById('newLabelInput').value.trim();
+      if (val && !availableLabels.includes(val)) {
+        availableLabels.push(val);
+        document.getElementById('newLabelInput').value = '';
+        openLabelManager();
+        renderCalendar();
+      }
+    }
+
+    function renameLabel(index, newName) {
+      if (!newName) return;
+      const oldName = availableLabels[index];
+      availableLabels[index] = newName.trim();
+      EMPLOYEES.forEach(e => { if(e.label === oldName) e.label = newName.trim(); });
+      renderCalendar();
+    }
+
+    function removeLabel(index) {
+      if (availableLabels.length <= 1) { alert('Es muss mindestens 1 Label erhalten bleiben!'); return; }
+      availableLabels.splice(index, 1);
+      openLabelManager();
+      renderCalendar();
+    }
+
+    function renderCalendar() {
+      const year = parseInt(document.getElementById('yearInput').value) || 2026;
+      let dates = getDates(year);
+      updateLabelDropdowns();
+
+      if (currentWeekStartIndex === null) initCurrentWeekIndex(dates);
+
+      if (customPrintStart && customPrintEnd) {
+        dates = dates.filter(d => d.dateStr >= customPrintStart && d.dateStr <= customPrintEnd);
+      } else if (viewMode === '3days') {
+        dates = dates.slice(currentWeekStartIndex, currentWeekStartIndex + 3);
+      } else if (viewMode === '5days' || viewMode === 'custom_week') {
+        dates = dates.slice(currentWeekStartIndex, currentWeekStartIndex + 5);
+      } else if (viewMode === 'month') {
+        dates = dates.slice(0, 22);
+      } else if (viewMode === 'full') {
+        // Alle Tage
+      }
+
+      if (dates.length > 0) {
+        document.getElementById('weekDisplayInfo').innerText = `KW ${dates[0].kw} (${dates[0].dayFormatted} - ${dates[dates.length-1].dayFormatted})`;
+      }
+
+      const selectedLabel = document.getElementById('labelFilter').value;
+      const filteredEmployees = EMPLOYEES.filter(emp => emp.active && (selectedLabel === 'all' || emp.label === selectedLabel));
+
+      function isLastDayOfKW(index) {
+        if (index === dates.length - 1) return true;
+        return dates[index].kw !== dates[index + 1].kw;
+      }
+
+      // --- HEADER ---
+      let headHTML = `<tr class="bg-gray-100 border-b border-gray-400 font-bold text-gray-700">
+        <th class="sticky-col-1 border-r-2 border-gray-800 p-1 text-left">Mitarbeiter & Label</th>`;
+
+      let currentKw = '';
+      let kwSpan = 0;
+      const kwGroups = [];
+      dates.forEach(d => {
+        if (d.kw !== currentKw) {
+          if (currentKw !== '') kwGroups.push({ kw: currentKw, span: kwSpan });
+          currentKw = d.kw; kwSpan = 1;
+        } else { kwSpan++; }
+      });
+      if (kwSpan > 0) kwGroups.push({ kw: currentKw, span: kwSpan });
+
+      kwGroups.forEach(k => {
+        headHTML += `<th colSpan="${k.span}" class="border-r-2 border-gray-800 bg-slate-200 py-1 text-center text-xs">KW ${k.kw}</th>`;
+      });
+
+      headHTML += `</tr><tr class="bg-gray-50 border-b border-gray-300 font-semibold text-gray-600">
+        <th class="sticky-col-1 border-r-2 border-gray-800"></th>`;
+
+      dates.forEach((d, idx) => {
+        const kwClass = isLastDayOfKW(idx) ? 'kw-separator' : 'border-r border-gray-300';
+        headHTML += `<th class="${kwClass} min-w-[85px] max-w-[85px] p-1 text-[11px] ${d.holidayName ? 'bg-orange-200 text-orange-950 font-bold' : ''}">${d.dayName}</th>`;
+      });
+
+      headHTML += `</tr><tr class="bg-white border-b-2 border-gray-800 font-bold text-gray-900">
+        <th class="sticky-col-1 border-r-2 border-gray-800 p-1"></th>`;
+
+      dates.forEach((d, idx) => {
+        const kwClass = isLastDayOfKW(idx) ? 'kw-separator' : 'border-r border-gray-300';
+        headHTML += `<th class="${kwClass} p-1 text-[10px] ${d.holidayName ? 'bg-orange-300 text-orange-950' : ''}">${d.dayFormatted}</th>`;
+      });
+
+      headHTML += `</tr><tr class="bg-amber-50 border-b-2 border-gray-600 font-semibold">
+        <th class="sticky-col-1 border-r-2 border-gray-800 text-left px-2 py-1 text-amber-900">Infozeile</th>`;
+      
+      dates.forEach((d, idx) => {
+        const val = infoRow[d.dateStr] || '';
+        const kwClass = isLastDayOfKW(idx) ? 'kw-separator' : 'border-r border-gray-300';
+        headHTML += `<td class="${kwClass} p-0 border border-gray-300">
+          <input type="text" value="${val}" onchange="infoRow['${d.dateStr}']=this.value" class="w-full h-full text-xs text-center bg-transparent border-none focus:outline-none" />
+        </td>`;
+      });
+      headHTML += `</tr>`;
+      document.getElementById('tableHead').innerHTML = headHTML;
+
+      // --- BODY ---
+      let bodyHTML = '';
+      filteredEmployees.forEach((emp) => {
+        let labelOptionsHTML = '';
+        availableLabels.forEach(l => {
+          labelOptionsHTML += `<option value="${l}" ${emp.label===l?'selected':''}>${l}</option>`;
+        });
+
+        bodyHTML += `<tr class="border-b border-gray-300 hover:bg-slate-50">
+          <td class="sticky-col-1 border-r-2 border-gray-800 text-left px-2 py-1.5 bg-slate-50 border border-gray-300">
+            <div class="flex items-center justify-between">
+              <input type="text" value="${emp.firstName} ${emp.lastName}" onchange="updateEmpFullName(${emp.id}, this.value)" class="w-full bg-transparent font-bold text-blue-900 focus:outline-none text-xs" />
+              <button onclick="openModal(${emp.id})" class="text-[10px] bg-blue-100 hover:bg-blue-200 text-blue-800 px-1 rounded ml-1 font-bold no-print" title="Ferien-Zähler">📊</button>
+            </div>
+            <div class="flex items-center justify-between text-[10px] text-gray-500 font-mono mt-0.5">
+              <span>Nr: <input type="text" value="${emp.empNo}" onchange="updateEmp(${emp.id}, 'empNo', this.value)" class="bg-transparent text-gray-600 font-mono w-10 focus:outline-none" /></span>
+              <select onchange="updateEmpLabel(${emp.id}, this.value)" class="text-[9px] px-1 py-0.5 rounded border font-bold bg-indigo-50 text-indigo-900 border-indigo-300">
+                ${labelOptionsHTML}
+              </select>
+            </div>
+          </td>`;
+
+        dates.forEach((d, idx) => {
+          const cellKey = `${emp.id}_${d.dateStr}`;
+          const defaultVal = d.holidayName ? d.holidayName : '';
+          const val = gridData[cellKey] !== undefined ? gridData[cellKey] : defaultVal;
+          let bgClass = getDynamicColor(val);
+          if (!gridData[cellKey] && d.holidayName) bgClass = 'bg-orange-200 text-orange-950 font-bold';
+          
+          const isSelected = selectedCells.has(cellKey);
+          const kwClass = isLastDayOfKW(idx) ? 'kw-separator' : '';
+
+          bodyHTML += `<td 
+            id="cell_${cellKey}"
+            onmousedown="handleCellMouseDown(event, '${cellKey}')"
+            onmouseenter="handleCellMouseEnter('${cellKey}')"
+            ontouchstart="handleTouchStart(event, '${cellKey}')"
+            ontouchend="handleTouchEnd(event)"
+            class="${kwClass} border border-gray-300 p-0 h-9 ${bgClass} ${isSelected ? 'selected-cell' : ''} relative select-none cursor-pointer">
+            <input type="text" list="shiftsList" value="${val}" onchange="updateCell(${emp.id}, '${d.dateStr}', this.value)" class="w-full h-full text-xs font-bold bg-transparent border-none text-center focus:outline-none cursor-pointer" />
+          </td>`;
+        });
+        bodyHTML += `</tr>`;
+      });
+
+      bodyHTML += `<tr class="bg-gray-800 h-2"><td colSpan="${dates.length + 1}"></td></tr>`;
+
+      bodyHTML += `<tr class="bg-amber-100 font-bold border-b border-gray-400">
+        <td class="sticky-col-1 border-r-2 border-gray-800 text-left px-2 py-1 text-gray-900 font-bold border">Tages- Schichten</td>`;
+      dates.forEach((d, idx) => {
+        const val = dailyShifts[d.dateStr] || '';
+        const bgClass = getDynamicColor(val);
+        const kwClass = isLastDayOfKW(idx) ? 'kw-separator' : '';
+        bodyHTML += `<td class="${kwClass} border border-gray-300 p-0 ${bgClass}">
+          <input type="text" list="shiftsList" value="${val}" onchange="dailyShifts['${d.dateStr}']=this.value; renderCalendar();" class="w-full h-full text-xs text-center bg-transparent border-none focus:outline-none font-bold" />
+        </td>`;
+      });
+      bodyHTML += `</tr>`;
+
+      bodyHTML += `<tr class="bg-yellow-100 font-bold border-b-2 border-gray-800">
+        <td class="sticky-col-1 border-r-2 border-gray-800 text-left px-2 py-1 text-yellow-950 border">Schulferien TG</td>`;
+      dates.forEach((d, idx) => {
+        const isFerien = SCHOOL_HOLIDAYS_TG.some(h => d.dateStr >= h.start && d.dateStr <= h.end);
+        const kwClass = isLastDayOfKW(idx) ? 'kw-separator' : '';
+        bodyHTML += `<td class="${kwClass} border border-gray-300 p-1 text-[10px] text-center ${isFerien ? 'bg-yellow-300 text-yellow-950 font-bold' : ''}">${isFerien ? 'Ferien' : ''}</td>`;
+      });
+      bodyHTML += `</tr>`;
+
+      bodyHTML += `<tr class="bg-slate-200 font-bold"><td class="sticky-col-1 border-r-2 border-gray-800 text-left px-2 py-1 text-slate-800 border">Projekte:</td><td colSpan="${dates.length}" class="border"></td></tr>`;
+      
+      projects.forEach(proj => {
+        bodyHTML += `<tr class="border-b border-gray-300 bg-white">
+          <td class="sticky-col-1 border-r-2 border-gray-800 text-left px-2 py-1 font-medium text-gray-700 bg-gray-50 flex items-center justify-between border">
+            <span contenteditable="true" onblur="renameProject('${proj}', this.innerText)" class="focus:outline-none border-b border-dotted border-gray-400 font-bold text-purple-900">${proj}</span>
+            <button onclick="removeProject('${proj}')" class="text-red-500 font-bold text-xs ml-1 no-print">×</button>
+          </td>`;
+        
+        dates.forEach((d, idx) => {
+          const pKey = `${proj}_${d.dateStr}`;
+          const val = projectData[pKey] || '';
+          const bgClass = getDynamicColor(val);
+          const isSelected = selectedCells.has(pKey);
+          const kwClass = isLastDayOfKW(idx) ? 'kw-separator' : '';
+
+          bodyHTML += `<td 
+            id="cell_${pKey}"
+            onmousedown="handleCellMouseDown(event, '${pKey}')"
+            onmouseenter="handleCellMouseEnter('${pKey}')"
+            class="${kwClass} border border-gray-300 p-0 h-9 ${bgClass} ${isSelected ? 'selected-cell' : ''} relative select-none cursor-pointer">
+            <input type="text" list="shiftsList" value="${val}" onchange="updateProjectCell('${proj}', '${d.dateStr}', this.value)" class="w-full h-full text-xs font-bold bg-transparent border-none text-center focus:outline-none cursor-pointer" />
+          </td>`;
+        });
+        bodyHTML += `</tr>`;
+      });
+
+      document.getElementById('tableBody').innerHTML = bodyHTML;
+      updateSelectionBar();
+      updateDatalist();
+    }
+
+    // --- MARKIERUNG & TOUCH LOGIK ---
+    window.addEventListener('mouseup', () => { isMouseDown = false; });
+
+    function handleCellMouseDown(event, key) {
+      isMouseDown = true;
+      if (!event.ctrlKey && !event.metaKey && !selectedCells.has(key)) {
+        selectedCells.clear();
+      }
+      if (selectedCells.has(key)) selectedCells.delete(key);
+      else selectedCells.add(key);
+      renderCalendar();
+    }
+
+    function handleCellMouseEnter(key) {
+      if (isMouseDown) {
+        selectedCells.add(key);
+        renderCalendar();
+      }
+    }
+
+    function handleTouchStart(event, key) {
+      longPressTimer = setTimeout(() => {
+        isMouseDown = true;
+        selectedCells.add(key);
+        renderCalendar();
+      }, 500);
+    }
+
+    function handleTouchEnd(event) {
+      clearTimeout(longPressTimer);
+      isMouseDown = false;
+    }
+
+    function clearSelection() {
+      selectedCells.clear();
+      renderCalendar();
+    }
+
+    function updateSelectionBar() {
+      const bar = document.getElementById('selectionBar');
+      if (selectedCells.size > 0) {
+        bar.classList.remove('hidden');
+        document.getElementById('selectedCount').innerText = `${selectedCells.size} Feld(er) markiert`;
+      } else {
+        bar.classList.add('hidden');
+      }
+    }
+
+    function applyBatchValue(val) {
+      selectedCells.forEach(key => {
+        if (key.includes('_20')) {
+          if (projects.some(p => key.startsWith(p + '_'))) {
+            projectData[key] = val;
+          } else {
+            gridData[key] = val;
+          }
+        }
+      });
+      renderCalendar();
+    }
+
+    function applyBatchCustomText() {
+      const txt = document.getElementById('customTextInput').value.trim();
+      if (txt) {
+        if (!shiftOptions.includes(txt)) shiftOptions.push(txt);
+        applyBatchValue(txt);
+      }
+    }
+
+    function updateDatalist() {
+      let datalist = document.getElementById('shiftsList');
+      if (!datalist) {
+        datalist = document.createElement('datalist');
+        datalist.id = 'shiftsList';
+        document.body.appendChild(datalist);
+      }
+      datalist.innerHTML = '';
+      shiftOptions.forEach(opt => {
+        if (opt) {
+          const el = document.createElement('option');
+          el.value = opt;
+          datalist.appendChild(el);
+        }
+      });
+    }
+
+    function updateCell(empId, dateStr, val) {
+      gridData[`${empId}_${dateStr}`] = val;
+      if (val && !shiftOptions.includes(val)) shiftOptions.push(val);
+      renderCalendar();
+    }
+
+    function updateProjectCell(projName, dateStr, val) {
+      projectData[`${projName}_${dateStr}`] = val;
+      renderCalendar();
+    }
+
+    function updateEmp(id, field, val) {
+      const emp = EMPLOYEES.find(e => e.id === id);
+      if (emp) emp[field] = val;
+    }
+
+    function updateEmpLabel(id, label) {
+      const emp = EMPLOYEES.find(e => e.id === id);
+      if (emp) emp.label = label;
+    }
+
+    function updateEmpFullName(id, fullName) {
+      const emp = EMPLOYEES.find(e => e.id === id);
+      if (emp) {
+        const parts = fullName.trim().split(' ');
+        emp.firstName = parts[0] || '';
+        emp.lastName = parts.slice(1).join(' ') || '';
+      }
+    }
+
+    function addEmployee() {
+      const newId = EMPLOYEES.length > 0 ? Math.max(...EMPLOYEES.map(e => e.id)) + 1 : 1;
+      EMPLOYEES.push({ id: newId, firstName: 'Neuer', lastName: 'MA', empNo: String(6000 + newId), entitlement: 25, active: true, label: availableLabels[0] || 'EMSR' });
+      renderCalendar();
+    }
+
+    function deleteEmployeeCompletely(id) {
+      const emp = EMPLOYEES.find(e => e.id === id);
+      if (!emp) return;
+      if (confirm(`Möchtest du "${emp.firstName} ${emp.lastName}" wirklich KOMPLETT LÖSCHEN? Alle eingetragenen Schichten und Daten dieser Person werden entfernt.`)) {
+        EMPLOYEES = EMPLOYEES.filter(e => e.id !== id);
+        Object.keys(gridData).forEach(k => {
+          if (k.startsWith(`${id}_`)) delete gridData[k];
+        });
+        calculateReportStats();
+        renderCalendar();
+      }
+    }
+
+    function addProject() {
+      const name = prompt('Projektname:');
+      if (name && !projects.includes(name)) { projects.push(name); renderCalendar(); }
+    }
+
+    function renameProject(oldName, newName) {
+      if (!newName || oldName === newName) return;
+      projects = projects.map(p => p === oldName ? newName : p);
+      Object.keys(projectData).forEach(k => {
+        if (k.startsWith(oldName + '_')) {
+          const datePart = k.split('_')[1];
+          projectData[`${newName}_${datePart}`] = projectData[k];
+          delete projectData[k];
+        }
+      });
+      renderCalendar();
+    }
+
+    function removeProject(name) {
+      if (confirm(`Projekt "${name}" löschen?`)) {
+        projects = projects.filter(p => p !== name);
+        renderCalendar();
+      }
+    }
+
+    // --- REPORT & BERECHNUNGEN ---
+    function openGlobalReportModal() {
+      calculateReportStats();
+      document.getElementById('globalReportModal').classList.remove('hidden');
+    }
+
+    function calculateReportStats() {
+      const year = parseInt(document.getElementById('yearInput').value) || 2026;
+      const allYearDates = getDates(year);
+      const workingDaysHolidays = allYearDates.filter(d => d.holidayName !== null && d.dayOfWeek >= 1 && d.dayOfWeek <= 5).length;
+      document.getElementById('reportHolidayCount').innerText = workingDaysHolidays;
+
+      const weekHours = parseFloat(document.getElementById('globalWeekHours').value) || 40.5;
+      const dayHours = parseFloat(document.getElementById('globalDayHours').value) || 8.1;
+      const grossYearHours = weekHours * 52.14; 
+      const holidayHoursDeduction = workingDaysHolidays * dayHours;
+      const baseNetSollPerMA = grossYearHours - holidayHoursDeduction;
+
+      const activeMA = EMPLOYEES.filter(emp => emp.active);
+      document.getElementById('reportActiveMA').innerText = activeMA.length;
+
+      let totalNetHoursSum = 0;
+      let tableHTML = '';
+      let labelStats = {};
+
+      availableLabels.forEach(l => { labelStats[l] = { count: 0, hours: 0 }; });
+
+      EMPLOYEES.forEach(emp => {
+        let usedFerien = 0, schoolDays = 0, courseDays = 0, companyDays = 0, sicknessDays = 0;
+        Object.keys(gridData).forEach(k => {
+          if (k.startsWith(`${emp.id}_`)) {
+            const val = gridData[k];
+            if (val === 'Ferien') usedFerien++;
+            else if (val === 'Schule') schoolDays++;
+            else if (val === 'Kurs') courseDays++;
+            else if (val === 'Firma') companyDays++;
+            else if (val === 'Krankheit') sicknessDays++;
+          }
+        });
+
+        const remainingFerien = emp.entitlement - usedFerien;
+        // Abzug für Ferien, Schule, Kurs, Firma und Krankheit
+        const deductionDays = usedFerien + schoolDays + courseDays + companyDays + sicknessDays;
+        const deductionHours = deductionDays * dayHours;
+        const empNetHours = Math.max(0, baseNetSollPerMA - deductionHours);
+
+        if (emp.active) {
+          totalNetHoursSum += empNetHours;
+          if (!labelStats[emp.label]) labelStats[emp.label] = { count: 0, hours: 0 };
+          labelStats[emp.label].count++;
+          labelStats[emp.label].hours += empNetHours;
+        }
+
+        tableHTML += `<tr class="border-b hover:bg-slate-50">
+          <td class="p-2 text-center"><input type="checkbox" ${emp.active ? 'checked' : ''} onchange="toggleEmpActive(${emp.id}, this.checked)" class="w-4 h-4 cursor-pointer" /></td>
+          <td class="p-2 font-bold text-blue-900">${emp.firstName} ${emp.lastName}</td>
+          <td class="p-2 font-mono text-slate-600">${emp.empNo}</td>
+          <td class="p-2 font-semibold text-purple-800">${emp.label}</td>
+          <td class="p-2 text-center font-bold text-slate-700">${Math.round(baseNetSollPerMA)} h</td>
+          <td class="p-2 text-center"><input type="number" value="${emp.entitlement}" onchange="updateEmpEntitlementDirect(${emp.id}, this.value)" class="w-16 p-1 border rounded text-center font-bold bg-white" /></td>
+          <td class="p-2 text-center font-bold text-amber-800">${usedFerien} T</td>
+          <td class="p-2 text-center font-bold text-emerald-700">${remainingFerien} T</td>
+          <td class="p-2 text-center font-bold text-emerald-600">${schoolDays} T</td>
+          <td class="p-2 text-center font-bold text-teal-600">${courseDays} T</td>
+          <td class="p-2 text-center font-bold text-purple-600">${companyDays} T</td>
+          <td class="p-2 text-center font-bold text-red-600">${sicknessDays} T</td>
+          <td class="p-2 text-center font-bold text-blue-800">${Math.round(empNetHours)} h</td>
+          <td class="p-2 text-center"><button onclick="deleteEmployeeCompletely(${emp.id})" class="bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded font-bold text-[10px]">🗑️ Löschen</button></td>
+        </tr>`;
+      });
+
+      let summaryHTML = '';
+      Object.keys(labelStats).forEach(lbl => {
+        const stats = labelStats[lbl];
+        summaryHTML += `<div class="bg-slate-100 p-3 rounded-lg border border-slate-300">
+          <div class="text-xs font-bold text-purple-900 mb-1">🏷️ Label: ${lbl}</div>
+          <div class="text-lg font-extrabold text-emerald-800">${Math.round(stats.hours).toLocaleString('de-CH')} h</div>
+          <div class="text-[10px] text-slate-500">Mitarbeiter aktiv: ${stats.count}</div>
+        </div>`;
+      });
+      document.getElementById('labelSummaryContainer').innerHTML = summaryHTML;
+
+      document.getElementById('reportTotalNetHours').innerText = Math.round(totalNetHoursSum).toLocaleString('de-CH') + ' h';
+      document.getElementById('reportTableBody').innerHTML = tableHTML;
+    }
+
+    function toggleEmpActive(id, val) {
+      const emp = EMPLOYEES.find(e => e.id === id);
+      if (emp) { emp.active = val; calculateReportStats(); renderCalendar(); }
+    }
+
+    function updateEmpEntitlementDirect(id, val) {
+      const emp = EMPLOYEES.find(e => e.id === id);
+      if (emp) { emp.entitlement = parseInt(val) || 0; calculateReportStats(); }
+    }
+
+    // FERIEN MODAL
+    function openModal(empId) {
+      activeEmpModalId = empId;
+      const emp = EMPLOYEES.find(e => e.id === empId);
+      
+      let usedFerienCount = 0;
+      Object.keys(gridData).forEach(k => {
+        if (k.startsWith(`${empId}_`) && gridData[k] === 'Ferien') {
+          usedFerienCount++;
+        }
+      });
+
+      document.getElementById('modalName').innerText = `${emp.firstName} ${emp.lastName}`;
+      document.getElementById('modalEmpNo').innerText = `Pers.-Nr: ${emp.empNo}`;
+      document.getElementById('modalEntitlementInput').value = emp.entitlement;
+      document.getElementById('modalEntitlement').innerText = `${emp.entitlement} Tage`;
+      document.getElementById('modalUsed').innerText = `${usedFerienCount} Tage`;
+      document.getElementById('modalRemaining').innerText = `${emp.entitlement - usedFerienCount} Tage`;
+      document.getElementById('modal').classList.remove('hidden');
+    }
+
+    function updateEntitlementFromModal() {
+      if (!activeEmpModalId) return;
+      const emp = EMPLOYEES.find(e => e.id === activeEmpModalId);
+      const val = parseInt(document.getElementById('modalEntitlementInput').value) || 0;
+      emp.entitlement = val;
+      openModal(activeEmpModalId);
+    }
+
+    function closeModal() {
+      activeEmpModalId = null;
+      document.getElementById('modal').classList.add('hidden');
+      renderCalendar();
+    }
+
+    // DRUCK MODAL
+    function openPrintModal() {
+      const today = new Date().toISOString().split('T')[0];
+      const future = new Date(); future.setDate(future.getDate() + 21);
+      document.getElementById('printStartDate').value = today;
+      document.getElementById('printEndDate').value = future.toISOString().split('T')[0];
+      document.getElementById('printModal').classList.remove('hidden');
+    }
+
+    function togglePrintModeFields() {
+      const mode = document.getElementById('printModeSelect').value;
+      document.getElementById('endDateContainer').style.display = (mode === '3weeks') ? 'none' : 'block';
+    }
+
+    function executeCustomPrint() {
+      const mode = document.getElementById('printModeSelect').value;
+      const start = document.getElementById('printStartDate').value;
+      if (mode === '3weeks') {
+        const startDateObj = new Date(start);
+        const endDateObj = new Date(startDateObj); endDateObj.setDate(startDateObj.getDate() + 21);
+        customPrintStart = start; customPrintEnd = endDateObj.toISOString().split('T')[0];
+      } else {
+        customPrintStart = start; customPrintEnd = document.getElementById('printEndDate').value;
+      }
+      document.getElementById('printModal').classList.add('hidden');
+      renderCalendar();
+      setTimeout(() => { window.print(); customPrintStart = null; customPrintEnd = null; renderCalendar(); }, 400);
+    }
+
+    // AUTOMATIK MODAL
+    function openAutomatikModal() {
+      const select = document.getElementById('autoTarget');
+      select.innerHTML = '';
+      EMPLOYEES.forEach(emp => {
+        select.innerHTML += `<option value="emp_${emp.id}">Mitarbeiter: ${emp.firstName} ${emp.lastName}</option>`;
+      });
+      document.getElementById('automatikModal').classList.remove('hidden');
+    }
+    function closeAutomatikModal() { document.getElementById('automatikModal').classList.add('hidden'); }
+
+    function executeAutomatik() {
+      const target = document.getElementById('autoTarget').value;
+      const startDateStr = document.getElementById('autoStartDate').value;
+      const endDateStr = document.getElementById('autoEndDate').value;
+      const valText = document.getElementById('autoValueText').value.trim();
+      const checkedDays = Array.from(document.querySelectorAll('input[name="autoDay"]:checked')).map(el => parseInt(el.value));
+
+      const startDate = new Date(startDateStr);
+      const endDate = endDateStr ? new Date(endDateStr) : new Date(startDate.getFullYear() + 2, 0, 1);
+      const allDates = getDates(parseInt(document.getElementById('yearInput').value) || 2026);
+
+      let count = 0;
+      allDates.forEach(d => {
+        const currDate = new Date(d.dateStr);
+        if (currDate >= startDate && currDate <= endDate && checkedDays.includes(d.dayOfWeek)) {
+          if (target.startsWith('emp_')) {
+            gridData[`${target.split('_')[1]}_${d.dateStr}`] = valText;
+            count++;
+          }
+        }
+      });
+      closeAutomatikModal();
+      renderCalendar();
+      alert(`${count} Einträge erstellt!`);
+    }
+
+    function saveData() {
+      const payload = { EMPLOYEES, gridData, infoRow, dailyShifts, projects, projectData, shiftOptions, availableLabels };
+      localStorage.setItem('personalkalender_full_v20', JSON.stringify(payload));
+      alert('Erfolgreich gespeichert!');
+    }
+
+    function loadData() {
+      const raw = localStorage.getItem('personalkalender_full_v20');
+      if (raw) {
+        const data = JSON.parse(raw);
+        if (data.EMPLOYEES) EMPLOYEES = data.EMPLOYEES;
+        if (data.gridData) gridData = data.gridData;
+        if (data.infoRow) infoRow = data.infoRow;
+        if (data.dailyShifts) dailyShifts = data.dailyShifts;
+        if (data.projects) projects = data.projects;
+        if (data.projectData) projectData = data.projectData;
+        if (data.availableLabels) availableLabels = data.availableLabels;
+        renderCalendar();
+        alert('Erfolgreich geladen!');
+      } else { alert('Keine Daten gefunden.'); }
+    }
+
+    renderCalendar();
+  </script>
+</body>
+</html>
